@@ -1,0 +1,25 @@
+{
+  "ntfy_topic": "NTFY_TOPIC-secret-ile-gelir",
+  "ntfy_url": "https://ntfy.sh",
+  "binance_url": "https://data-api.binance.vision",
+
+  "semboller": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ENSUSDT", "ARKMUSDT", "PYTHUSDT", "SUPERUSDT", "INJUSDT", "RSRUSDT", "FLOKIUSDT"],
+  "tf": "15m",
+
+  "key": 1.0,
+  "atr_per": 10,
+  "kaynak": "linreg",
+
+  "lr_len": 11,
+  "sig_len": 11,
+  "sig_sma": true,
+  "lr_filtre": false,
+
+  "hacim_sarti": true,
+  "min_hacim_usd": 250000,
+  "hacim_modu": "mum",
+
+  "htf_onay": true,
+  "htf": "2h",
+  "htf_tip": "ut+linreg"
+}
