@@ -3,7 +3,9 @@
   "ntfy_url": "https://ntfy.sh",
   "binance_url": "https://data-api.binance.vision",
 
-  "semboller": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ENSUSDT", "ARKMUSDT", "PYTHUSDT", "SUPERUSDT", "INJUSDT", "RSRUSDT", "FLOKIUSDT"],
+  "semboller": "TUMU",
+  "paralel": 8,
+  "tekil_bildirim_limiti": 8,
   "tf": "15m",
 
   "key": 1.0,

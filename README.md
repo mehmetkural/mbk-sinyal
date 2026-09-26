@@ -17,7 +17,9 @@ Actions → "MBK Sinyal Tarama" → **Run workflow** → `mod`:
 ## Ayarlar (`config.json`)
 | Alan | Açıklama |
 |---|---|
-| `semboller` | İzlenen Binance USDT pariteleri |
+| `semboller` | `"TUMU"` = Binance'teki tüm aktif USDT pariteleri (stabil coinler hariç, 24s hacmi eşiğin altındakiler atlanır) ya da `["BTCUSDT", ...]` şeklinde liste |
+| `tekil_bildirim_limiti` | Bir taramada bundan fazla sinyal çıkarsa tek tek değil, hacme göre sıralı tek özet bildirim gelir |
+| `paralel` | Aynı anda taranan sembol sayısı |
 | `tf` / `htf` | Sinyal zaman dilimi (15m) / onay zaman dilimi (2h) |
 | `key`, `atr_per`, `kaynak` | UT Bot ayarları (`kaynak`: linreg / close / heikin) |
 | `lr_len`, `sig_len`, `sig_sma`, `lr_filtre` | LinReg Candles ayarları |

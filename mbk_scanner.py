@@ -268,47 +268,104 @@ def load_state():
         return {}
 
 
+STABLES = {"USDC", "FDUSD", "TUSD", "DAI", "BUSD", "USDP", "PAX", "EUR", "EURI", "AEUR", "GBP", "TRY", "BRL",
+           "USDE", "USD1", "RLUSD", "XUSD", "BFUSD", "PYUSD", "U", "PAXG", "WBTC", "WBETH", "BNSOL"}
+
+
+def resolve_symbols(cfg):
+    """semboller = "TUMU" -> Binance'teki tüm aktif spot USDT pariteleri (stabil/sarılı coinler hariç).
+    24 saatlik hacmi hacim eşiğinin altında kalanlar baştan atlanır (o coin'de şart zaten sağlanamaz)."""
+    sem = cfg["semboller"]
+    if isinstance(sem, list):
+        return sem
+    info = http_json(f"{BINANCE}/api/v3/exchangeInfo?permissions=SPOT", timeout=60)
+    syms = {x["symbol"] for x in info["symbols"]
+            if x.get("status") == "TRADING" and x.get("quoteAsset") == "USDT"
+            and x.get("baseAsset") not in STABLES and x.get("isSpotTradingAllowed", True)}
+    total = len(syms)
+    if cfg.get("hacim_sarti"):
+        tick = http_json(f"{BINANCE}/api/v3/ticker/24hr?type=MINI", timeout=60)
+        qv = {t["symbol"]: float(t.get("quoteVolume") or 0) for t in tick}
+        syms = {x for x in syms if qv.get(x, 0) >= cfg["min_hacim_usd"]}
+    print(f"Binance USDT pariteleri: {total}, 24s hacmi eşiği geçen: {len(syms)}")
+    return sorted(syms)
+
+
 def main():
     cfg = CONFIG
     args = sys.argv[1:]
     if "--test" in args:
+        syms = resolve_symbols(cfg)
         http_json(cfg.get("ntfy_url", "https://ntfy.sh"), {
             "topic": cfg["ntfy_topic"], "title": "MBK Sinyal test",
-            "message": "Tarayıcı çalışıyor. İzlenen: " + ", ".join(cfg["semboller"]),
+            "message": f"Tarayıcı çalışıyor. İzlenen sembol sayısı: {len(syms)}",
             "tags": ["white_check_mark"], "priority": 3})
         print("Test bildirimi gönderildi.")
         return
     history = "--gecmis" in args
     last_n = 200 if history else 3
     state = load_state()
-    sent = 0
-    for sym in cfg["semboller"]:
+    syms = resolve_symbols(cfg)
+
+    from concurrent.futures import ThreadPoolExecutor
+    def work(sym):
         try:
-            sigs = signals_for(sym, cfg, last_n)
+            return sym, signals_for(sym, cfg, last_n), None
         except Exception as e:
-            log(f"HATA {sym}: {e}")
+            return sym, [], e
+    with ThreadPoolExecutor(max_workers=int(cfg.get("paralel", 8))) as ex:
+        results = list(ex.map(work, syms))
+
+    new = []
+    errors = 0
+    for sym, sigs, err in results:
+        if err:
+            errors += 1
+            log(f"HATA {sym}: {err}")
             continue
         for s in sigs:
             when = time.strftime("%d.%m %H:%M", time.localtime(s["bar_open"] / 1000))
             tag = "GEÇTİ" if not s["filtered"] else "elendi: " + ", ".join(s["filtered"])
             if history:
-                print(f"{when}  {s['side']:3} {sym:12} {fmt_price(s['close']):>14}  hacim {s['vol']:>14,.0f}$  2S(ut,lr)={s['htf']}  {tag}")
+                if not s["filtered"] or "--hepsi" in args:
+                    print(f"{when}  {s['side']:3} {sym:14} {fmt_price(s['close']):>14}  hacim {s['vol']:>14,.0f}$  2S(ut,lr)={s['htf']}  {tag}")
                 continue
             if s["filtered"]:
                 continue
             key = f"{sym}:{s['side']}:{s['bar_open']}"
             if state.get(sym) == key:
                 continue
-            try:
+            new.append((s, key, when))
+
+    sent = 0
+    limit = int(cfg.get("tekil_bildirim_limiti", 8))
+    ntfy = cfg.get("ntfy_url", "https://ntfy.sh")
+    try:
+        if len(new) <= limit:
+            for s, key, when in new:
                 push(s, cfg)
-                state[sym] = key
+                state[s["symbol"]] = key
                 sent += 1
-                log(f"GÖNDERİLDİ {s['side']} {sym} {when} fiyat={fmt_price(s['close'])} hacim={s['vol']:,.0f}$")
-            except Exception as e:
-                log(f"ntfy HATA {sym}: {e}")
+                log(f"GÖNDERİLDİ {s['side']} {s['symbol']} {when} fiyat={fmt_price(s['close'])} hacim={s['vol']:,.0f}$")
+        else:
+            # Çok sinyal varsa tek tek bildirim yerine hacme göre sıralı tek özet gönder
+            new.sort(key=lambda x: -x[0]["vol"])
+            lines = [f"{s['side']:3} {s['symbol']:<12} {fmt_price(s['close'])}  hacim {s['vol']/1e6:,.1f}M$" for s, _, _ in new[:40]]
+            if len(new) > 40:
+                lines.append(f"... ve {len(new) - 40} sinyal daha")
+            al = sum(1 for s, _, _ in new if s["side"] == "AL")
+            http_json(ntfy, {"topic": cfg["ntfy_topic"],
+                             "title": f"{len(new)} sinyal ({cfg['tf']}): {al} AL / {len(new) - al} SAT",
+                             "message": "\n".join(lines), "tags": ["bell"], "priority": 4})
+            for s, key, when in new:
+                state[s["symbol"]] = key
+            sent = len(new)
+            log(f"ÖZET GÖNDERİLDİ: {len(new)} sinyal")
+    except Exception as e:
+        log(f"ntfy HATA: {e}")
     if not history:
         STATE_FILE.write_text(json.dumps(state, indent=1))
-        log(f"tarama bitti: {len(cfg['semboller'])} sembol, {sent} bildirim")
+        log(f"tarama bitti: {len(syms)} sembol, {errors} hata, {sent} sinyal bildirildi")
 
 
 if __name__ == "__main__":
