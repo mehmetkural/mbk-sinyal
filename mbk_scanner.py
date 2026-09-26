@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -42,7 +43,7 @@ def http_json(url, data=None, timeout=20):
 
 
 def klines(symbol, interval, limit=500):
-    raw = http_json(f"{BINANCE}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
+    raw = http_json(f"{BINANCE}/api/v3/klines?symbol={urllib.parse.quote(symbol)}&interval={interval}&limit={limit}")
     now_ms = int(time.time() * 1000)
     rows = [r for r in raw if int(r[6]) < now_ms]  # yalnızca kapanmış mumlar
     return {
