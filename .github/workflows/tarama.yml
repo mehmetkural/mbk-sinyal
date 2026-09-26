@@ -1,0 +1,48 @@
+name: MBK Sinyal Tarama
+
+on:
+  schedule:
+    # Her 15 dakikalık mum kapanışından ~1 dk sonra (UTC). GitHub zamanlamada birkaç dakika gecikebilir.
+    - cron: "1,16,31,46 * * * *"
+  workflow_dispatch:
+    inputs:
+      mod:
+        description: "tara | test | gecmis"
+        default: "tara"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tarama
+  cancel-in-progress: false
+
+jobs:
+  tara:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Tara
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          MOD="${{ github.event.inputs.mod || 'tara' }}"
+          if [ "$MOD" = "test" ]; then python mbk_scanner.py --test
+          elif [ "$MOD" = "gecmis" ]; then python mbk_scanner.py --gecmis
+          else python mbk_scanner.py; fi
+
+      - name: Durumu kaydet (aynı sinyal iki kez gelmesin)
+        run: |
+          git config user.name "mbk-bot"
+          git config user.email "mbk-bot@users.noreply.github.com"
+          git add state.json 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "durum güncellendi [skip ci]"
+            git push
+          fi
